@@ -47,4 +47,35 @@ y = df_balanced["label"].values  # takes only the label column
 # ----- train / test split ----
 X_train, X_test, y_train, y_test = train_test_split(
     x, y, test_size=0.2, random_state=42, stratify=y
+    # stratify makes sure both traingin and testing sets have similar proportions of categories.
 )
+
+print(f"\nTraining samples: {len(X_train)}")
+print(f"Testing samples:  {len(X_test)}")
+
+# ---- Train random forest ---
+print("\nTraining model...")
+model = RandomForestClassifier(
+    n_estimators=100,  # creatinig 100 decision trees
+    random_state=42,
+    class_weight="balanced"  # balances the inbalcned data
+)
+model.fit(X_train, y_train)
+
+
+# evaluate
+y_pred = model.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+print(f"\nModel Accuracy: {accuracy * 100:.2f}%")
+print("\nDetailed Report:")
+print(classification_report(y_test, y_pred))
+
+# save the model
+# wb means write binary, since we are writing a model file, model_path  is file namne model.pl
+with open(MODEL_PATH, "wb") as f:
+    pickle.dump(model, f)
+
+
+print(f"Model saved to: {MODEL_PATH}")
+print("\nReady for Script 3 - Live Detection!")
