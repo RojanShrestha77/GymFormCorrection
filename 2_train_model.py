@@ -41,3 +41,10 @@ print(f"  Correct:   {len(df_balanced[df_balanced['label'] == 'correct'])}")
 print(f"  Incorrect: {len(df_balanced[df_balanced['label'] == 'incorrect'])}")
 
 # split features and labels
+x = df_balanced.drop("label", axis=1).values  # removes the label column
+y = df_balanced["label"].values  # takes only the label column
+
+# ----- train / test split ----
+X_train, X_test, y_train, y_test = train_test_split(
+    x, y, test_size=0.2, random_state=42, stratify=y
+)
