@@ -103,6 +103,9 @@ def get_feedback(left_angle, right_angle, left_elbow_angle, right_elbow_angle):
     return feedback
 
 
+rep_count = 0
+rep_stage = None
+
 # ------ open webcan ---
 print("Opening webcam------- Press Q to quit")
 cap = cv2.VideoCapture(0)
@@ -139,6 +142,14 @@ while cap.isOpened():
         right_shoulder = [landmarks[12].x, landmarks[12].y]
         right_elbow = [landmarks[14].x, landmarks[14].y]
         right_angle = calculate_angle(right_hip, right_shoulder, right_elbow)
+
+        # rep counter
+        avg_angle = (left_angle + right_angle) / 2
+        if avg_angle < 30:
+            rep_stage = "down"
+        if avg_angle > 70 and rep_stage == "down":
+            rep_stage = "up"
+            rep_count += 1
 
         # elbow bend angle
         left_wrist = [landmarks[15].x, landmarks[15].y]
@@ -221,6 +232,14 @@ while cap.isOpened():
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, elbow_color_l, 2)
         cv2.putText(frame, f"{int(right_elbow_angle)}deg", (ex_r + 10, ey_r),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, elbow_color_r, 2)
+
+        # Rep counter display
+        cv2.putText(frame, f"Reps: {rep_count}",
+                    (10, h - 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
+        cv2.putText(frame, f"Stage: {rep_stage or '--'}",
+                    (10, h - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
 
     else:
         # No person detected
