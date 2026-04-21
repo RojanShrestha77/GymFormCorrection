@@ -68,6 +68,10 @@ def draw_skeleton(frame, landmarks, h, w):
     # DRaw lines
     for start, end in connections:
         # landmarks = key body points detected by AI
+       # landmarks[11].x = 0.4   #
+       # landmarks[11].y = 0.3
+
+        # x and y represent where the body joitns is in the image
         x1 = int(landmarks[start].x * w)
         y1 = int(landmarks[start].y * h)
         x2 = int(landmarks[end].x * w)
@@ -161,10 +165,22 @@ while cap.isOpened():
         right_elbow_angle = calculate_angle(
             right_shoulder, right_elbow, right_wrist)
 
+        # ---------- Adding smart features to the ML model ----------
+        feat = []  # you are creating an empty list this will store all teh numbers that describe the human body pose
+
+        avg_shoulder_angle = (left_angle + right_angle) / 2
+        avg_elbow_angle = (left_elbow_angle + right_elbow_angle) / 2
+        symmetry = abs(left_angle - right_angle)
+
+        # combine with old features
+        feat += [avg_shoulder_angle, avg_elbow_angle, symmetry]
+
         # --- Prepare features for ML model ---
-        feat = []
         for lm in landmarks:
             feat += [lm.x, lm.y, lm.z, lm.visibility]
+        # lm.x = left-right position, lm.y = up-down position, lm.z = depth(toward.away camera), lm.visibility = how confident ai is tha this pooint is visible
+        # x - left - right position, 0.0 = far left o fthe image, 0.5 = middle, 1.0= far right
+        # y = up-down position, 0.0 = top of the image, 0.5 = middle, 1.0 = bottom
 
         prediction = clf.predict([feat])[0]
         confidence = clf.predict_proba([feat])[0]
