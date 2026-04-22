@@ -3,6 +3,7 @@ import mediapipe as mp
 import numpy as np
 import pandas as pd
 import os
+from features import extract_features
 
 # New MediaPipe API
 from mediapipe.tasks import python
@@ -32,32 +33,47 @@ options = vision.PoseLandmarkerOptions(
 detector = vision.PoseLandmarker.create_from_options(options)
 
 
+# def get_landmarks(image_path):
+#     """Run MediaPipe on one image and return landmarks as a flat list"""
+#     image = cv2.imread(image_path)
+#     if image is None:
+#         return None
+
+#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+#     mp_image = mp.Image(
+#         image_format=mp.ImageFormat.SRGB,
+#         data=image_rgb
+#     )
+
+#     result = detector.detect(mp_image)
+
+#     if not result.pose_landmarks or len(result.pose_landmarks) == 0:
+#         return None
+
+#     landmarks = []
+#     for landmark in result.pose_landmarks[0]:
+#         landmarks.append(landmark.x)
+#         landmarks.append(landmark.y)
+#         landmarks.append(landmark.z)
+#         landmarks.append(landmark.visibility)
+
+#     return landmarks  # 33 landmarks x 4 values = 132 numbers
+
 def get_landmarks(image_path):
-    """Run MediaPipe on one image and return landmarks as a flat list"""
     image = cv2.imread(image_path)
     if image is None:
         return None
 
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-    mp_image = mp.Image(
-        image_format=mp.ImageFormat.SRGB,
-        data=image_rgb
-    )
-
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
     result = detector.detect(mp_image)
 
     if not result.pose_landmarks or len(result.pose_landmarks) == 0:
         return None
 
-    landmarks = []
-    for landmark in result.pose_landmarks[0]:
-        landmarks.append(landmark.x)
-        landmarks.append(landmark.y)
-        landmarks.append(landmark.z)
-        landmarks.append(landmark.visibility)
-
-    return landmarks  # 33 landmarks x 4 values = 132 numbers
+    landmarks = result.pose_landmarks[0]  # ✅ keep as object, not flat list
+    return extract_features(landmarks)    # ✅ returns 135 features
 
 
 def process_folder(folder_path, label):
@@ -94,11 +110,18 @@ def process_folder(folder_path, label):
     return rows
 
 
-# --- Build column names ---
-columns = []
+# # --- Build column names ---
+# columns = []
+# for i in range(33):
+#     columns += [f"x{i}", f"y{i}", f"z{i}", f"v{i}"]
+# columns.append("label")
+
+columns = ["avg_shoulder_angle", "avg_elbow_angle",
+           "symmetry"]  # 3 angle features
 for i in range(33):
-    columns += [f"x{i}", f"y{i}", f"z{i}", f"v{i}"]
+    columns += [f"x{i}", f"y{i}", f"z{i}", f"v{i}"]  # 132 raw landmarks
 columns.append("label")
+# total = 135 + 1
 
 # --- Process both folders ---
 all_rows = []
