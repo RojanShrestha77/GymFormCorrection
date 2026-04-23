@@ -11,42 +11,65 @@ from features import extract_features, calculate_angle
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-from config import MODEL_PATH, POSE_MODEL_PATH
+from config import MODEL_PATH, POSE_MODEL_PATH, MIN_VISIBILITY_THRESHOLD, PREDICTION_BUFFER_SIZE, REP_COOLDOWN_FRAMES, get_logger
 from features import extract_features, get_joint_angle, get_feedback
 
-# MODEL_PATH = r"C:\Users\LOQ\Desktop\GymForm\lateral_raise_model.pkl"
-# # this is pre trained model from the mediapipe
-# POSE_MODEL_PATH = "pose_landmarker_full.task"
+# Set up logging
+logger = get_logger("live_detection")
 
 # --------------- Load trained Ml model ------------
-print("Loading model...")
-with open(MODEL_PATH, "rb") as f:
-    clf = pickle.load(f)
-print("Model loaded!")
+logger.info("Loading model...")
+try:
+    with open(MODEL_PATH, "rb") as f:
+        clf = pickle.load(f)
+    logger.info("Model loaded successfully!")
+except FileNotFoundError:
+    logger.error(f"Model file not found: {MODEL_PATH}")
+    logger.error("Run Script 2 (2_train_model.py) first to train the model.")
+    exit(1)
+except pickle.UnpicklingError:
+    logger.error(f"Model file is corrupted: {MODEL_PATH}")
+    logger.error("Re-run Script 2 to retrain the model.")
+    exit(1)
+except Exception as e:
+    logger.error(f"Failed to load model: {e}")
+    exit(1)
 
 # ------------ set up MediaPipe ----------------
-# tells mediapipe where to find the pose detection model file
-base_options = python.BaseOptions(model_asset_path=POSE_MODEL_PATH)
-options = vision.PoseLandmarkerOptions(
-    base_options=base_options, running_mode=vision.RunningMode.IMAGE, output_segmentation_masks=False)
-# configures mediapipe with three settings:
-# base_options-the model file location from aboce
-# running_mode=IMAGE - process one image at a time(not video stream mode)
-# output_segmentation_masks=False - we dont need the body outline mask, just the landmars
-detector = vision.PoseLandmarker.create_from_options(options)
-# creates teh actual pose detector object using those settings. THIS is what we call later to detect joints
-# loads the ai model
-# configures it using options
-# prepares it to detect poses
+logger.info("Setting up MediaPipe pose detector...")
+try:
+    # tells mediapipe where to find the pose detection model file
+    base_options = python.BaseOptions(model_asset_path=POSE_MODEL_PATH)
+    options = vision.PoseLandmarkerOptions(
+        base_options=base_options, running_mode=vision.RunningMode.IMAGE, output_segmentation_masks=False)
+    # configures mediapipe with three settings:
+    # base_options-the model file location from aboce
+    # running_mode=IMAGE - process one image at a time(not video stream mode)
+    # output_segmentation_masks=False - we dont need the body outline mask, just the landmars
+    detector = vision.PoseLandmarker.create_from_options(options)
+    # creates teh actual pose detector object using those settings. THIS is what we call later to detect joints
+    # loads the ai model
+    # configures it using options
+    # prepares it to detect poses
+    logger.info("MediaPipe setup complete!")
+except FileNotFoundError:
+    logger.error(f"MediaPipe model file not found: {POSE_MODEL_PATH}")
+    logger.error("Run Script 1 (1_extract_landmarks.py) to download the model.")
+    exit(1)
+except Exception as e:
+    logger.error(f"Failed to initialize MediaPipe: {e}")
+    exit(1)
 
 
-prediction_buffer = deque(maxlen=10)  # store last 10 predictions for smoothing
+# prediction_buffer = deque(maxlen=10)  # store last 10 predictions for smoothing
+prediction_buffer = deque(maxlen=PREDICTION_BUFFER_SIZE)
 rep_count = 0
 rep_stage = None
 form_score_correct = 0
 form_score_total = 0
+rep_cooldown = 0
 
-# ========================================================================
+# ========A================================================================
 # def calculate_angle(a, b, c):
 #     a = np.array(a)
 #     b = np.array(b)
@@ -126,8 +149,15 @@ def draw_ui(frame, smoothed, conf_pct, feedback_lines, rep_counter, rep_stage, a
 
 
 # ── Open webcam ───────────────────────────────────────────────────────────────
-print("Opening webcam...  Press Q to quit, R to reset rep counter")
+logger.info("Opening webcam... Press Q to quit, R to reset rep counter")
 cap = cv2.VideoCapture(0)
+
+# Check if webcam opened successfully
+if not cap.isOpened():
+    logger.error("Failed to open webcam. Check if camera is connected and not in use.")
+    exit(1)
+
+logger.info("Webcam opened successfully!")
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -150,19 +180,45 @@ while cap.isOpened():
         angles = get_joint_angle(landmarks)
 
         # ── Rep counter ───────────────────────────────────────────────────────
-        avg_angle = (angles["left_shoulder_angle"] +
-                     angles["right_shoulder_angle"]) / 2
-        if avg_angle < config.REP_DOWN_ANGLE:
-            rep_stage = "down"
-        if avg_angle > config.REP_UP_ANGLE and rep_stage == "down":
-            rep_stage = "up"
-            rep_count += 1
+        # avg_angle = (angles["left_shoulder_angle"] +
+        #              angles["right_shoulder_angle"]) / 2
+        # if avg_angle < config.REP_DOWN_ANGLE:
+        #     rep_stage = "down"
+        # if avg_angle > config.REP_UP_ANGLE and rep_stage == "down":
+        #     rep_stage = "up"
+        #     rep_count += 1
 
-        # ── ML prediction ─────────────────────────────────────────────────────
-        feat = extract_features(landmarks)
-        prediction = clf.predict([feat])[0]
-        confidence = clf.predict_proba([feat])[0]
-        conf_pct = max(confidence) * 100
+        if rep_cooldown > 0:
+            rep_cooldown -= 1
+
+        # Only count if detection confidence is high enough
+        if result.pose_landmarks and len(result.pose_landmarks) > 0:
+            left_shoulder_vis = landmarks[11].visibility
+            right_shoulder_vis = landmarks[12].visibility
+
+            if left_shoulder_vis > MIN_VISIBILITY_THRESHOLD and right_shoulder_vis > MIN_VISIBILITY_THRESHOLD:
+                avg_angle = (angles["left_shoulder_angle"] +
+                             angles["right_shoulder_angle"]) / 2
+
+                if avg_angle < config.REP_DOWN_ANGLE:
+                    rep_stage = "down"
+                elif avg_angle > config.REP_UP_ANGLE and rep_stage == "down" and rep_cooldown == 0:
+                    rep_stage = "up"
+                    rep_count += 1
+                    rep_cooldown = REP_COOLDOWN_FRAMES
+
+        else:
+            rep_stage = None
+
+        # ── ML prediction with error handling (CRITICAL) ─────────────────────
+        try:
+            feat = extract_features(landmarks)
+            prediction = clf.predict([feat])[0]
+            confidence = clf.predict_proba([feat])[0]
+            conf_pct = max(confidence) * 100
+        except Exception as e:
+            logger.warning(f"Prediction failed on frame: {e}")
+            continue  # skip this frame and continue with next
 
         # ── Hard rule override ────────────────────────────────────────────────
         min_elbow = min(angles["left_elbow_angle"],
@@ -224,6 +280,7 @@ while cap.isOpened():
 
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
+        logger.info("User quit the application")
         break
     if key == ord('r'):
         rep_count = 0
@@ -231,15 +288,15 @@ while cap.isOpened():
         form_score_correct = 0
         form_score_total = 0
         prediction_buffer.clear()
-        print("Rep counter and score reset!")
+        logger.info("Rep counter and score reset!")
 
 cap.release()
 cv2.destroyAllWindows()
 
 if form_score_total > 0:
     final_score = form_score_correct / form_score_total * 100
-    print(f"\nSession Summary")
-    print(f"  Reps completed : {rep_count}")
-    print(f"  Form score     : {final_score:.1f}%")
-    print(f"  Total frames   : {form_score_total}")
-print("Done!")
+    logger.info(f"\nSession Summary")
+    logger.info(f"  Reps completed : {rep_count}")
+    logger.info(f"  Form score     : {final_score:.1f}%")
+    logger.info(f"  Total frames   : {form_score_total}")
+logger.info("Done!")

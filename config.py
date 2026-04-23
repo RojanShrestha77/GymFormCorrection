@@ -9,6 +9,13 @@ CSV_PATH = os.path.join(BASE_DIR, "lateral_raise_data.csv")
 MODEL_PATH = os.path.join(BASE_DIR, "lateral_raise_model.pkl")
 POSE_MODEL_PATH = os.path.join(BASE_DIR, "pose_landmarker_full.task")
 
+CORRECT_FOLDER = os.path.join(
+    BASE_DIR, "laterraises-dataset", "lateral raises")
+INCORRECT_FOLDER = os.path.join(
+    BASE_DIR, "laterraises-dataset", "lateral-raise.multiclass", "train")
+
+MIN_VISIBILITY_THRESHOLD = 0.7
+REP_COOLDOWN_FRAMES = 15
 
 # ------ feature deinition -------
 # this is teh single place that defines what features exist, if you add a new feature , add it here only - nowhere else
@@ -47,3 +54,27 @@ SYMMETRY_MAX = 20           # arm angle difference above this = uneven
 
 # ------- smoothin ------------
 PREDICTION_BUFFER_SIZE = 10  # frames to average prediction over
+
+# -------- Logging Configuration --------
+import logging
+from datetime import datetime
+
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+log_filename = datetime.now().strftime("gymform_%Y%m%d_%H%M%S.log")
+LOG_PATH = os.path.join(LOG_DIR, log_filename)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_PATH),
+        logging.StreamHandler()  # also print to console
+    ]
+)
+
+
+def get_logger(name):
+    """Get a logger instance for a script"""
+    return logging.getLogger(name)

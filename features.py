@@ -110,7 +110,7 @@ def get_feedback(angles: dict, config) -> list:
     symmetry = abs(angles["left_shoulder_angle"] -
                    angles["right_shoulder_angle"])
 
-    if min_elbow < config.ELBOW_TOO_STRAIGHT:
+    if min_elbow < config.ELBOW_TOO_BENT:
         feedback.append(f"Straighten elbows ({int(min_elbow)}°)")
 
     if min_shoulder < config.ARM_TOO_LOW:
