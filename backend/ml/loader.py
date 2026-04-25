@@ -1,5 +1,7 @@
 import pickle
-from backend.config import MODEL_PATH
+
+# Import from backend/backend_config.py (local config)
+from backend_config import MODEL_PATH
 
 model_bundle = None
 
