@@ -54,7 +54,8 @@ try:
     logger.info("MediaPipe setup complete!")
 except FileNotFoundError:
     logger.error(f"MediaPipe model file not found: {POSE_MODEL_PATH}")
-    logger.error("Run Script 1 (1_extract_landmarks.py) to download the model.")
+    logger.error(
+        "Run Script 1 (1_extract_landmarks.py) to download the model.")
     exit(1)
 except Exception as e:
     logger.error(f"Failed to initialize MediaPipe: {e}")
@@ -68,22 +69,6 @@ rep_stage = None
 form_score_correct = 0
 form_score_total = 0
 rep_cooldown = 0
-
-# ========A================================================================
-# def calculate_angle(a, b, c):
-#     a = np.array(a)
-#     b = np.array(b)
-#     c = np.array(c)
-
-#     radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - \
-#         np.arctan2(a[1] - b[1], a[0] - b[0])
-#     angle = np.abs(radians * 180.0 / np.pi)
-
-#     if angle > 180.0:
-#         angle = 360 - angle
-
-#     return angle
-# ========================================================================
 
 CONNECTIONS = [
     (11, 13), (13, 15),  # left arm
@@ -154,7 +139,8 @@ cap = cv2.VideoCapture(0)
 
 # Check if webcam opened successfully
 if not cap.isOpened():
-    logger.error("Failed to open webcam. Check if camera is connected and not in use.")
+    logger.error(
+        "Failed to open webcam. Check if camera is connected and not in use.")
     exit(1)
 
 logger.info("Webcam opened successfully!")
@@ -178,15 +164,6 @@ while cap.isOpened():
 
         # ── Get individual joint angles for display and rules ─────────────────
         angles = get_joint_angle(landmarks)
-
-        # ── Rep counter ───────────────────────────────────────────────────────
-        # avg_angle = (angles["left_shoulder_angle"] +
-        #              angles["right_shoulder_angle"]) / 2
-        # if avg_angle < config.REP_DOWN_ANGLE:
-        #     rep_stage = "down"
-        # if avg_angle > config.REP_UP_ANGLE and rep_stage == "down":
-        #     rep_stage = "up"
-        #     rep_count += 1
 
         if rep_cooldown > 0:
             rep_cooldown -= 1
