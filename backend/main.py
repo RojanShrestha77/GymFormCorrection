@@ -7,11 +7,22 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from ml.loader import load_model
 from routes.predict import router as predict_router
 from routes.auth import router as auth_router
+from backend_config import ALLOWED_ORIGINS, PROJECT_NAME, VERSION
 
-app = FastAPI(title="GymForm API", version="1.0.0")
+app = FastAPI(title=PROJECT_NAME, version=VERSION)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")

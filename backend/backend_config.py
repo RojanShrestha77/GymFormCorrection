@@ -1,11 +1,24 @@
 import os
 
-BASE_DIR = r"C:\Users\LOQ\Desktop\GymForm"  # root folder of the project
-MODEL_PATH = os.path.join(BASE_DIR, "lateral_raise_model.pkl")
+# Paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+MODEL_PATH = os.path.join(PROJECT_ROOT, "lateral_raise_model.pkl")
 
+# API Settings
+API_V1_PREFIX = "/api/v1"
+PROJECT_NAME = "GymForm AI API"
+VERSION = "1.0.0"
 
-SECRET_KEY = "change-this-to-a-random-secret-in-production"
+# CORS Settings
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8081",  # Expo default
+    "http://localhost:19000",  # Expo default
+    "http://localhost:19006",  # Expo web
+]
+
+# Auth Settings
+SECRET_KEY = "your-secret-key-change-in-production-use-openssl-rand-hex-32"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
-
-DATABASE_URL = "sqlite:///./gymform.db"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days

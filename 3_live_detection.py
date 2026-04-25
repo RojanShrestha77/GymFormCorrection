@@ -1,9 +1,11 @@
-import cv2  # handles teh webcam, drawing on scrreen, showing the window
+from datetime import datetime
+import json
+
+import cv2
 import mediapipe as mp
 import numpy as np
-import pickle  # its used to saved you trained machine learning model into a file
-import os  # used to interact with you rcomputes operaitng system
-# used to create a fixed length buffer to store recent predictions for smoothing
+import pickle
+import os
 from collections import deque
 import config
 from features import extract_features, calculate_angle
@@ -38,19 +40,10 @@ except Exception as e:
 # ------------ set up MediaPipe ----------------
 logger.info("Setting up MediaPipe pose detector...")
 try:
-    # tells mediapipe where to find the pose detection model file
     base_options = python.BaseOptions(model_asset_path=POSE_MODEL_PATH)
     options = vision.PoseLandmarkerOptions(
         base_options=base_options, running_mode=vision.RunningMode.IMAGE, output_segmentation_masks=False)
-    # configures mediapipe with three settings:
-    # base_options-the model file location from aboce
-    # running_mode=IMAGE - process one image at a time(not video stream mode)
-    # output_segmentation_masks=False - we dont need the body outline mask, just the landmars
     detector = vision.PoseLandmarker.create_from_options(options)
-    # creates teh actual pose detector object using those settings. THIS is what we call later to detect joints
-    # loads the ai model
-    # configures it using options
-    # prepares it to detect poses
     logger.info("MediaPipe setup complete!")
 except FileNotFoundError:
     logger.error(f"MediaPipe model file not found: {POSE_MODEL_PATH}")
@@ -61,14 +54,14 @@ except Exception as e:
     logger.error(f"Failed to initialize MediaPipe: {e}")
     exit(1)
 
-
-# prediction_buffer = deque(maxlen=10)  # store last 10 predictions for smoothing
 prediction_buffer = deque(maxlen=PREDICTION_BUFFER_SIZE)
 rep_count = 0
 rep_stage = None
 form_score_correct = 0
 form_score_total = 0
 rep_cooldown = 0
+rep_data = []  # Store per-rep information
+session_start_time = datetime.now()  # Track when session started
 
 CONNECTIONS = [
     (11, 13), (13, 15),  # left arm
@@ -87,10 +80,8 @@ def draw_skeleton(frame, landmarks, h, w, good_form):
     for s, e in CONNECTIONS:
         x1 = int(landmarks[s].x * w)
         y1 = int(landmarks[s].y * h)
-
         x2 = int(landmarks[e].x * w)
         y2 = int(landmarks[e].y * h)
-
         cv2.line(frame, (x1, y1), (x2, y2), color, 2)
 
     for idx in KEY_JOINTS:
@@ -100,7 +91,6 @@ def draw_skeleton(frame, landmarks, h, w, good_form):
 
 
 def draw_ui(frame, smoothed, conf_pct, feedback_lines, rep_counter, rep_stage, angles, form_score_correct, form_score_total, h, w):
-
     good_form = smoothed == "correct"
     header_color = (0, 160, 0) if good_form else (0, 0, 180)
 
@@ -137,7 +127,6 @@ def draw_ui(frame, smoothed, conf_pct, feedback_lines, rep_counter, rep_stage, a
 logger.info("Opening webcam... Press Q to quit, R to reset rep counter")
 cap = cv2.VideoCapture(0)
 
-# Check if webcam opened successfully
 if not cap.isOpened():
     logger.error(
         "Failed to open webcam. Check if camera is connected and not in use.")
@@ -168,25 +157,6 @@ while cap.isOpened():
         if rep_cooldown > 0:
             rep_cooldown -= 1
 
-        # Only count if detection confidence is high enough
-        if result.pose_landmarks and len(result.pose_landmarks) > 0:
-            left_shoulder_vis = landmarks[11].visibility
-            right_shoulder_vis = landmarks[12].visibility
-
-            if left_shoulder_vis > MIN_VISIBILITY_THRESHOLD and right_shoulder_vis > MIN_VISIBILITY_THRESHOLD:
-                avg_angle = (angles["left_shoulder_angle"] +
-                             angles["right_shoulder_angle"]) / 2
-
-                if avg_angle < config.REP_DOWN_ANGLE:
-                    rep_stage = "down"
-                elif avg_angle > config.REP_UP_ANGLE and rep_stage == "down" and rep_cooldown == 0:
-                    rep_stage = "up"
-                    rep_count += 1
-                    rep_cooldown = REP_COOLDOWN_FRAMES
-
-        else:
-            rep_stage = None
-
         # ── ML prediction with error handling (CRITICAL) ─────────────────────
         try:
             feat = extract_features(landmarks)
@@ -207,6 +177,32 @@ while cap.isOpened():
         prediction_buffer.append(prediction)
         smoothed = max(set(prediction_buffer),
                        key=list(prediction_buffer).count)
+
+        # ── Rep counting (NOW smoothed and min_elbow are defined!) ────────────
+        if result.pose_landmarks and len(result.pose_landmarks) > 0:
+            left_shoulder_vis = landmarks[11].visibility
+            right_shoulder_vis = landmarks[12].visibility
+
+            if left_shoulder_vis > MIN_VISIBILITY_THRESHOLD and right_shoulder_vis > MIN_VISIBILITY_THRESHOLD:
+                avg_angle = (angles["left_shoulder_angle"] +
+                             angles["right_shoulder_angle"]) / 2
+
+                if avg_angle < config.REP_DOWN_ANGLE:
+                    rep_stage = "down"
+                elif avg_angle > config.REP_UP_ANGLE and rep_stage == "down" and rep_cooldown == 0:
+                    rep_stage = "up"
+                    rep_count += 1
+                    rep_cooldown = REP_COOLDOWN_FRAMES
+
+                    # Capture rep data for session export
+                    rep_data.append({
+                        "rep": rep_count,
+                        "form": smoothed,
+                        "shoulder": round(avg_angle, 1),
+                        "elbow": round(min_elbow, 1)
+                    })
+            else:
+                rep_stage = None
 
         # ── Form score ────────────────────────────────────────────────────────
         form_score_total += 1
@@ -265,6 +261,8 @@ while cap.isOpened():
         form_score_correct = 0
         form_score_total = 0
         prediction_buffer.clear()
+        rep_data.clear()  # Clear rep data on reset
+        session_start_time = datetime.now()  # Reset session start time
         logger.info("Rep counter and score reset!")
 
 cap.release()
@@ -276,4 +274,23 @@ if form_score_total > 0:
     logger.info(f"  Reps completed : {rep_count}")
     logger.info(f"  Form score     : {final_score:.1f}%")
     logger.info(f"  Total frames   : {form_score_total}")
+
+    # Save session data to JSON
+    session_data = {
+        "exercise": "lateral_raise",
+        "started_at": session_start_time.isoformat(),
+        "ended_at": datetime.now().isoformat(),
+        "total_reps": rep_count,
+        "form_score_pct": round(final_score, 1),
+        "reps": rep_data
+    }
+
+    session_filename = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    try:
+        with open(session_filename, "w") as f:
+            json.dump(session_data, f, indent=2)
+        logger.info(f"Session data saved to: {session_filename}")
+    except Exception as e:
+        logger.error(f"Failed to save session data: {e}")
+
 logger.info("Done!")
