@@ -39,33 +39,6 @@ detector = vision.PoseLandmarker.create_from_options(options)
 logger.info("MediaPipe setup complete!")
 
 
-# def get_landmarks(image_path):
-#     """Run MediaPipe on one image and return landmarks as a flat list"""
-#     image = cv2.imread(image_path)
-#     if image is None:
-#         return None
-
-#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-#     mp_image = mp.Image(
-#         image_format=mp.ImageFormat.SRGB,
-#         data=image_rgb
-#     )
-
-#     result = detector.detect(mp_image)
-
-#     if not result.pose_landmarks or len(result.pose_landmarks) == 0:
-#         return None
-
-#     landmarks = []
-#     for landmark in result.pose_landmarks[0]:
-#         landmarks.append(landmark.x)
-#         landmarks.append(landmark.y)
-#         landmarks.append(landmark.z)
-#         landmarks.append(landmark.visibility)
-
-#     return landmarks  # 33 landmarks x 4 values = 132 numbers
-
 def get_landmarks(image_path):
     image = cv2.imread(image_path)
     if image is None:
@@ -116,12 +89,6 @@ def process_folder(folder_path, label):
     return rows
 
 
-# # --- Build column names ---
-# columns = []
-# for i in range(33):
-#     columns += [f"x{i}", f"y{i}", f"z{i}", f"v{i}"]
-# columns.append("label")
-
 columns = ["avg_shoulder_angle", "avg_elbow_angle",
            "symmetry"]  # 3 angle features
 for i in range(33):
@@ -144,8 +111,10 @@ else:
     try:
         df.to_csv(CSV_PATH, index=False)
         logger.info(f"\nDone! Saved {len(df)} rows to '{CSV_PATH}'")
-        logger.info(f"  Correct samples:   {len(df[df['label'] == 'correct'])}")
-        logger.info(f"  Incorrect samples: {len(df[df['label'] == 'incorrect'])}")
+        logger.info(
+            f"  Correct samples:   {len(df[df['label'] == 'correct'])}")
+        logger.info(
+            f"  Incorrect samples: {len(df[df['label'] == 'incorrect'])}")
     except PermissionError:
         logger.error(f"Permission denied: Cannot write to {CSV_PATH}")
         exit(1)
