@@ -1,6 +1,0 @@
-2026-04-25 11:55:15,411 - live_detection - INFO - Loading model...
-2026-04-25 11:55:29,122 - live_detection - INFO - Model loaded successfully!
-2026-04-25 11:55:29,123 - live_detection - INFO - Setting up MediaPipe pose detector...
-2026-04-25 11:55:29,549 - live_detection - INFO - MediaPipe setup complete!
-2026-04-25 11:55:29,549 - live_detection - INFO - Opening webcam... Press Q to quit, R to reset rep counter
-2026-04-25 11:55:31,130 - live_detection - INFO - Webcam opened successfully!

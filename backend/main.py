@@ -1,21 +1,25 @@
+from backend_config import ALLOWED_ORIGINS, PROJECT_NAME, VERSION
+from routes.auth import router as auth_router
+from routes.predict import router as predict_router
+from ml.loader import load_model
+from models import Base
+from database import engine
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
 import sys
 import os
 
-# Add parent directory to path so we can import config.py and features.py from GymForm/
+# MUST be first - adds parent dir to path before any local imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from ml.loader import load_model
-from routes.predict import router as predict_router
-from routes.auth import router as auth_router
-from backend_config import ALLOWED_ORIGINS, PROJECT_NAME, VERSION
+
+# Auto-create all tables on startup
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=PROJECT_NAME, version=VERSION)
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

@@ -22,3 +22,7 @@ ALLOWED_ORIGINS = [
 SECRET_KEY = "your-secret-key-change-in-production-use-openssl-rand-hex-32"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
+
+
+# Database Settings
+DATABASE_URL = "postgresql://postgres:yourpassword@localhost:5432/gymform_db"

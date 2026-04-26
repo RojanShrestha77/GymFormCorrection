@@ -1,0 +1,13 @@
+﻿# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Logs
+logs/
+*.log
+
+# Session files
+*.json
