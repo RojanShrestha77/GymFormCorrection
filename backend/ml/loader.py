@@ -1,17 +1,23 @@
-import pickle
+import os
+import tensorflow as tf
 
-# Import from backend/backend_config.py (local config)
-from backend_config import MODEL_PATH
+from backend.backend_config import TFLITE_MODEL_PATH
 
-model_bundle = None
+_interpreter = None
 
 
 def load_model():
-    global model_bundle
-    with open(MODEL_PATH, "rb") as f:
-        model_bundle = pickle.load(f)
-    print(f"Model loaded: {MODEL_PATH}")
+    global _interpreter
+    if not os.path.exists(TFLITE_MODEL_PATH):
+        print(
+            f"[loader] TFLite model not found at {TFLITE_MODEL_PATH}. "
+            "Run train_model.py first, then restart the server."
+        )
+        return
+    _interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
+    _interpreter.allocate_tensors()
+    print(f"[loader] TFLite model loaded: {TFLITE_MODEL_PATH}")
 
 
-def get_model():
-    return model_bundle
+def get_model() -> tf.lite.Interpreter | None:
+    return _interpreter

@@ -1,0 +1,56 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Download the code from GitHub
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Install Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 3. Install all dependencies from requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 4. Check code style (catches obvious bugs and bad formatting)
+      - name: Lint with flake8
+        run: |
+          pip install flake8
+          # Stop if there are Python syntax errors or undefined names
+          flake8 backend/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Warn on style issues (max line length 120)
+          flake8 backend/ --count --max-line-length=120 --statistics
+
+      # 5. Run tests (add your own tests in tests/ folder later)
+      - name: Run tests
+        env:
+          SECRET_KEY: test-secret-key-only-for-ci-not-real
+          DATABASE_URL: sqlite:///./test.db
+          ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: 30
+          EMAIL_USER: test@example.com
+          EMAIL_PASS: fake
+          CLIENT_URL: http://localhost:3000
+        run: |
+          pip install pytest httpx
+          # Run tests if they exist, skip gracefully if none yet
+          if [ -d "tests" ] && [ "$(ls -A tests/)" ]; then
+            pytest tests/ -v
+          else
+            echo "No tests yet — skipping. Add tests in tests/ folder."
+          fi

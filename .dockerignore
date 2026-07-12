@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Secrets — never bake into image
+.env
+
+# Training data & notebooks (large, not needed at runtime)
+*.csv
+*.keras
+*.pkl
+2_train_model.py
+collect_data.py
+*.ipynb
+
+# Dev tools
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Docs
+README.md
+*.md
+
+# Local DB (Docker uses PostgreSQL, not SQLite)
+*.db
+*.sqlite3
+
+# Logs
+logs/
+*.log

@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from database import Base
+from backend.database import Base
 
 
 class User(Base):
@@ -11,9 +11,10 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    profile_image = Column(String, nullable=True)
 
     # Relationship - one user has many sessions
-    sessions = relationship("WorkoutSession", back_populates="user")
+    sessions = relationship("WorkoutSession", back_populates="user", cascade="all, delete-orphan")
 
 
 class WorkoutSession(Base):
@@ -27,6 +28,8 @@ class WorkoutSession(Base):
     total_reps = Column(Integer, default=0)
     correct_reps = Column(Integer, default=0)
     form_score = Column(Float, nullable=True)
+
+    notes = Column(String, nullable=True)
 
     # Relationship - session belongs to a user
     user = relationship("User", back_populates="sessions")

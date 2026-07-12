@@ -1,138 +1,314 @@
-from matplotlib import pyplot as plt
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import StratifiedKFold, cross_val_score, cross_val_score, train_test_split
-from sklearn.metrics import ConfusionMatrixDisplay, classification_report, accuracy_score, confusion_matrix
-from sklearn.utils import resample
-import pickle
-import os
-from config import CSV_PATH, MODEL_PATH, N_FEATURES, get_logger
-import config
+"""
+train_model.py - Train TCN model and export to TFLite
 
-# Set up logging
+INPUT:  lateral_raise_tcn_dataset.csv  (one row = one rep = 180 features)
+OUTPUT: lateral_raise_model.tflite     (copy this to Flutter assets/)
+        lateral_raise_model.keras      (backup, for retraining)
+
+HOW TO RUN:
+  python train_model.py
+
+RUN ON COLAB IF SLOW:
+  Upload your CSV, run this script, download the .tflite file.
+"""
+
+import os
+import json
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from sklearn.model_selection import train_test_split   # FIX 1: was "test_test_spit"
+from sklearn.utils import class_weight
+from datetime import datetime
+
+from config import (
+    CSV_PATH, TFLITE_MODEL_PATH, KERAS_MODEL_PATH,
+    SEQ_LEN, N_FEATURES, N_CLASSES, LABELS,
+    RANDOM_STATE, TEST_SIZE, EPOCHS, BATCH_SIZE,
+    LEARNING_RATE, EARLY_STOPPING_PATIENCE,
+    get_logger,
+)
+
 logger = get_logger("train_model")
 
-# load the csv with error handling
-logger.info("Loading training data...")
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 1: LOAD DATA
+# ═══════════════════════════════════════════════════════════════════════
+logger.info("=" * 60)
+logger.info("GYMFORM TCN TRAINING")
+logger.info("=" * 60)
+
+logger.info(f"\nLoading: {CSV_PATH}")
 try:
     df = pd.read_csv(CSV_PATH)
-    logger.info(f"Total samples: {len(df)}")
-    logger.info(f"  Correct:   {len(df[df['label'] == 'correct'])}")
-    logger.info(f"  Incorrect: {len(df[df['label'] == 'incorrect'])}")
 except FileNotFoundError:
-    logger.error(f"CSV file not found: {CSV_PATH}")
-    logger.error("Run Script 1 (1_extract_landmarks.py) first to generate the dataset.")
-    exit(1)
-except pd.errors.EmptyDataError:
-    logger.error(f"CSV file is empty: {CSV_PATH}")
-    exit(1)
-except Exception as e:
-    logger.error(f"Failed to load CSV: {e}")
+    logger.error(f"CSV not found: {CSV_PATH}")
+    logger.error("Run collect_data.py first to record training reps.")
     exit(1)
 
-# -------- verify feature count matches config --------
-actual_features = len(df.columns) - 1
-if actual_features != N_FEATURES:
-    error_msg = (
-        f"CSV has {actual_features} features but config expects {N_FEATURES}. "
-        f"Re-run Script 1 to regenerate the CSV."
-    )
-    logger.error(error_msg)
-    raise ValueError(error_msg)
-logger.info(f"Feature count verified: {actual_features} features (excluding label)")
-
-# fixing the imbalance by upsamopling the incrrect sampled
-df_correct = df[df['label'] == 'correct']
-df_incorrect = df[df['label'] == 'incorrect']
-
-
-# upsample incorrect to match the current count
-df_incorrect_upsampled = resample(
-    df_incorrect,
-    replace=True,
-    n_samples=len(df_correct),
-    random_state=config.RANDOM_STATE
-)
-
-df_balanced = pd.concat([df_correct, df_incorrect_upsampled])
-df_balanced = df_balanced.sample(frac=1, random_state=config.RANDOM_STATE).reset_index(
-    drop=True)  # this shuffles the data
-# sample(frac=1) means:take 100% data but in random order
-
-
-logger.info(f"Balanced dataset: {len(df_balanced)} samples")
-logger.info(f"  Correct:   {len(df_balanced[df_balanced['label'] == 'correct'])}")
-logger.info(f"  Incorrect: {len(df_balanced[df_balanced['label'] == 'incorrect'])}")
-
-# split features and labels
-x = df_balanced.drop("label", axis=1).values  # removes the label column
-y = df_balanced["label"].values  # takes only the label column
-
-# ----- train / test split ----
-X_train, X_test, y_train, y_test = train_test_split(
-    x, y, test_size=config.TEST_SIZE, random_state=config.RANDOM_STATE, stratify=y
-    # stratify makes sure both traingin and testing sets have similar proportions of categories.
-)
-
-logger.info(f"\nTraining samples: {len(X_train)}")
-logger.info(f"Testing samples:  {len(X_test)}")
-
-logger.info("\nFeature columns:")
-logger.info(str(df.columns.tolist()))
-
-# ---- Train random forest ---
-logger.info("\nTraining model...")
-model = RandomForestClassifier(
-    n_estimators=config.N_ESTIMATORS,  # creatinig 100 decision trees
-    random_state=config.RANDOM_STATE,
-    class_weight="balanced",  # balances the inbalcned data
-    n_jobs=-1  # uses all CPU cores to speed up training
-)
-model.fit(X_train, y_train)
-
-
-# evaluate
-y_pred = model.predict(X_test)
-accuracy = accuracy_score(y_test, y_pred)
-
-logger.info(f"\nModel Accuracy: {accuracy * 100:.2f}%")
-logger.info("\nDetailed Report:")
-logger.info("\n" + classification_report(y_test, y_pred))
-
-
-# --- cross validation -------
-logger.info("Running 5-Fold cross validation...")
-skf = StratifiedKFold(n_splits=config.CV_FOLDS,
-                      shuffle=True, random_state=config.RANDOM_STATE)
-cv_scores = cross_val_score(model, x, y, cv=skf, scoring="accuracy", n_jobs=-1)
+logger.info(f"Rows (reps): {len(df)}")
 logger.info(
-    f"KFold Accuracy : {cv_scores.mean()*100:.2f}%  (+/- {cv_scores.std()*100:.2f}%)")
-logger.info(f"Per fold       : {[f'{s*100:.1f}%' for s in cv_scores]}")
+    f"Columns: {len(df.columns)} (1 label + {len(df.columns)-1} features)")
+logger.info(f"\nLabel distribution:")
+for lbl, cnt in df['label'].value_counts().items():
+    logger.info(f"  {lbl}: {cnt} reps")
 
-# -------- confusion matrix ----------
-cm = confusion_matrix(y_test, y_pred, labels=["correct", "incorrect"])
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[
-                              "correct", "incorrect"])
-fig, ax = plt.subplots(figsize=(6, 5))
-disp.plot(ax=ax, colorbar=False, cmap="Blues")
-ax.set_title(f"Confusion Matrix (accuracy {accuracy*100:.1f}% )")
-plt.tight_layout()
-cm_path = os.path.join(os.path.dirname(MODEL_PATH), "confusion_matrix.png")
-plt.savefig(cm_path, dpi=150)
-plt.close()
-logger.info(f"Confusion matrix saved to: {cm_path}")
+if len(df) < 80:
+    logger.warning(
+        f"Small dataset ({len(df)} reps). Aim for 140+ for reliable accuracy.")
 
-# save the model with error handling
-logger.info("Saving model...")
-try:
-    with open(MODEL_PATH, "wb") as f:
-        pickle.dump(model, f)
-    logger.info(f"Model saved to: {MODEL_PATH}")
-    logger.info("\nReady for Script 3 - Live Detection!")
-except PermissionError:
-    logger.error(f"Permission denied: Cannot write to {MODEL_PATH}")
-    exit(1)
-except Exception as e:
-    logger.error(f"Failed to save model: {e}")
-    exit(1)
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 2: PREPARE DATA
+# ═══════════════════════════════════════════════════════════════════════
+logger.info("\nPreparing data...")
+
+feature_cols = [c for c in df.columns if c != "label"]
+X = df[feature_cols].values.astype(np.float32)
+X = X.reshape(-1, SEQ_LEN, N_FEATURES)   # (n_reps, 30, 6)
+logger.info(f"X shape: {X.shape}")
+
+# Convert text labels to numbers
+label_to_idx = {lbl: i for i, lbl in enumerate(LABELS)}
+y_idx = df['label'].map(label_to_idx).values
+
+# Two answer sheets for two output heads
+# 1=correct, 0=any error
+y_form = (y_idx == 0).astype(np.float32)
+y_error = tf.keras.utils.to_categorical(y_idx, N_CLASSES)  # one-hot (n, 4)
+
+logger.info(f"y_form shape:  {y_form.shape}  (binary: correct vs error)")
+logger.info(f"y_error shape: {y_error.shape} (4-class: which error)")
+
+# Train/test split — stratify keeps label balance in both sets
+X_tr, X_te, yf_tr, yf_te, ye_tr, ye_te = train_test_split(
+    X, y_form, y_error,
+    test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y_idx,
+)
+logger.info(f"\nTrain: {len(X_tr)} reps  |  Test: {len(X_te)} reps")
+
+# Class weights — stops model ignoring rare labels
+cw = class_weight.compute_class_weight(
+    "balanced", classes=np.unique(y_idx), y=y_idx
+)
+class_weights_dict = dict(enumerate(cw))
+logger.info(f"Class weights: {class_weights_dict}")
+
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 3: BUILD TCN MODEL
+# ═══════════════════════════════════════════════════════════════════════
+logger.info("\nBuilding TCN model...")
+
+
+def build_mobile_tcn(seq_len=SEQ_LEN, n_features=N_FEATURES, n_classes=N_CLASSES):
+    inputs = tf.keras.Input(shape=(seq_len, n_features), name="pose_sequence")
+
+    # TCN Block 1 — standard conv, dilation=1
+    x = tf.keras.layers.Conv1D(
+        32, kernel_size=3, padding="causal",   # FIX 2: was "causual"
+        activation="relu", name="tcn_1"
+    )(inputs)
+    x = tf.keras.layers.BatchNormalization(name="bn_1")(x)
+
+    # TCN Block 2 — dilated causal conv, dilation=2
+    x = tf.keras.layers.Conv1D(
+        64, kernel_size=3, padding="causal", dilation_rate=2,
+        activation="relu", name="dw_2"
+    )(x)
+    x = tf.keras.layers.BatchNormalization(name="bn_2")(x)
+    x = tf.keras.layers.Dropout(0.2, name="drop_2")(x)
+
+    # TCN Block 3 — dilated causal conv, dilation=4
+    x = tf.keras.layers.Conv1D(
+        64, kernel_size=3, padding="causal", dilation_rate=4,
+        activation="relu", name="dw_3"
+    )(x)
+    x = tf.keras.layers.BatchNormalization(name="bn_3")(x)
+    x = tf.keras.layers.Dropout(0.2, name="drop_3")(x)
+
+    # Collapse time dimension
+    x = tf.keras.layers.GlobalAveragePooling1D(name="gap")(
+        x)  # FIX 5: was "GlobalAveragePoolin1D"
+    x = tf.keras.layers.Dense(32, activation="relu", name="dense")(x)
+    x = tf.keras.layers.Dropout(0.3, name="drop_out")(x)
+
+    # Output 1: correct vs incorrect (binary)
+    form_out = tf.keras.layers.Dense(1, activation="sigmoid", name="form")(x)
+
+    # Output 2: which specific error (4-class)
+    error_out = tf.keras.layers.Dense(
+        n_classes, activation="softmax", name="error")(x)
+
+    return tf.keras.Model(inputs, [form_out, error_out], name="GymFormTCN")
+
+
+model = build_mobile_tcn()
+model.summary(print_fn=logger.info)
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE),
+    loss={
+        "form":  "binary_crossentropy",
+        "error": "categorical_crossentropy",
+    },
+    loss_weights={"form": 1.0, "error": 0.8},
+    metrics={
+        "form":  "accuracy",
+        "error": "accuracy",
+    },
+)
+
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 4: TRAIN
+# ═══════════════════════════════════════════════════════════════════════
+logger.info(
+    f"\nTraining for up to {EPOCHS} epochs (patience={EARLY_STOPPING_PATIENCE})...")
+
+callbacks = [
+    tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=EARLY_STOPPING_PATIENCE,
+        restore_best_weights=True,
+        verbose=1,
+    ),
+    tf.keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.5,
+        patience=5,
+        min_lr=1e-5,
+        verbose=1,
+    ),
+]
+
+start = datetime.now()
+history = model.fit(
+    X_tr,
+    {"form": yf_tr, "error": ye_tr},
+    validation_data=(X_te, {"form": yf_te, "error": ye_te}),
+    epochs=EPOCHS,
+    batch_size=BATCH_SIZE,
+    callbacks=callbacks,
+    verbose=1,
+)
+duration = (datetime.now() - start).total_seconds()
+
+epochs_run = len(history.history["loss"])   # FIX 6: was "history.hisotry"
+logger.info(f"\nTraining done: {epochs_run} epochs in {duration:.1f}s")
+
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 5: EVALUATE
+# ═══════════════════════════════════════════════════════════════════════
+logger.info("\nEvaluating on test set...")
+results = model.evaluate(
+    X_te,
+    # FIX 7: was "yt_te" (wrong variable name)
+    {"form": yf_te, "error": ye_te},
+    verbose=0
+)
+
+form_acc = results[3]
+error_acc = results[4]
+
+logger.info(f"Form accuracy  (correct/incorrect): {form_acc*100:.2f}%")
+logger.info(f"Error accuracy (which error):       {error_acc*100:.2f}%")
+
+if form_acc < 0.80:
+    logger.warning("Form accuracy below 80%. Collect more data and retrain.")
+else:
+    logger.info("Accuracy looks good. Proceeding to export.")
+
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 6: SAVE KERAS MODEL
+# ═══════════════════════════════════════════════════════════════════════
+model.save(KERAS_MODEL_PATH)
+logger.info(f"\nKeras model saved: {KERAS_MODEL_PATH}")
+
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 7: CONVERT TO TFLITE
+# ═══════════════════════════════════════════════════════════════════════
+logger.info("\nConverting to TFLite...")
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.float16]
+
+tflite_model = converter.convert()
+
+with open(TFLITE_MODEL_PATH, "wb") as f:
+    f.write(tflite_model)
+
+size_kb = len(tflite_model) / 1024
+logger.info(f"TFLite model saved: {TFLITE_MODEL_PATH}")
+logger.info(f"Model size: {size_kb:.1f} KB  ({size_kb/1024:.2f} MB)")
+
+if size_kb > 5120:
+    logger.warning("Model over 5MB. Consider reducing layers.")
+
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 8: VERIFY TFLITE WORKS
+# ═══════════════════════════════════════════════════════════════════════
+logger.info("\nVerifying TFLite model...")
+
+# FIX 8 + 9: was "nterp" and "np.interp" everywhere — correct variable is just "interp"
+interp = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
+interp.allocate_tensors()
+
+inp = interp.get_input_details()
+outp = interp.get_output_details()
+
+logger.info(f"Input shape:  {inp[0]['shape']}   dtype: {inp[0]['dtype']}")
+logger.info(f"Output 0 (form):  {outp[0]['shape']}")
+logger.info(f"Output 1 (error): {outp[1]['shape']}")
+
+sample = X_te[0:1].astype(np.float32)
+interp.set_tensor(inp[0]["index"], sample)
+interp.invoke()
+
+form_conf = interp.get_tensor(outp[0]["index"])[0][0]
+error_pred = interp.get_tensor(outp[1]["index"])[0]
+pred_label = LABELS[np.argmax(error_pred)]
+
+logger.info(f"\nSample prediction:")
+logger.info(
+    f"  Form confidence: {form_conf:.3f}  ({'correct' if form_conf > 0.5 else 'error'})")
+logger.info(
+    f"  Error class:     {pred_label} ({max(error_pred)*100:.1f}% confident)")
+logger.info(f"  True label:      {df['label'].iloc[0]}")
+
+# ═══════════════════════════════════════════════════════════════════════
+# STEP 9: SAVE TRAINING REPORT
+# ═══════════════════════════════════════════════════════════════════════
+report = {
+    "timestamp":      datetime.now().isoformat(),
+    "dataset_path":   CSV_PATH,
+    "total_reps":     len(df),
+    "label_counts":   df["label"].value_counts().to_dict(),
+    "seq_len":        SEQ_LEN,
+    "n_features":     N_FEATURES,
+    "labels":         LABELS,
+    "epochs_run":     epochs_run,
+    "training_sec":   round(duration, 1),
+    "form_accuracy":  round(float(form_acc), 4),
+    "error_accuracy": round(float(error_acc), 4),
+    "tflite_path":    TFLITE_MODEL_PATH,
+    "tflite_size_kb": round(size_kb, 1),
+}
+
+report_path = TFLITE_MODEL_PATH.replace(".tflite", "_report.json")
+with open(report_path, "w") as f:
+    json.dump(report, f, indent=2)
+logger.info(f"\nReport saved: {report_path}")
+
+# ═══════════════════════════════════════════════════════════════════════
+# FINAL SUMMARY
+# ═══════════════════════════════════════════════════════════════════════
+logger.info("\n" + "=" * 60)
+logger.info("TRAINING COMPLETE")
+logger.info("=" * 60)
+logger.info(f"Form accuracy:  {form_acc*100:.2f}%")
+logger.info(f"Error accuracy: {error_acc*100:.2f}%")
+logger.info(f"Model size:     {size_kb:.1f} KB")
+logger.info(f"\nNEXT STEP:")
+logger.info(f"Copy this file to your Flutter app:")
+logger.info(f"  {TFLITE_MODEL_PATH}")
+logger.info(f"  -> GymFormApplication/assets/models/lateral_raise_model.tflite")
+logger.info("=" * 60)

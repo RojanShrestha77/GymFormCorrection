@@ -1,13 +1,37 @@
 ﻿# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # Virtual environment
 .venv/
+venv/
+env/
+
+# Environment / secrets — NEVER commit these
+.env
+*.env.local
+
+# Database
+*.db
+*.sqlite3
 
 # Logs
 logs/
 *.log
+
+# Training data and model artifacts (large files)
+lateral_raise_tcn_dataset.csv
+*.pkl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
 
 # Session files
 *.json

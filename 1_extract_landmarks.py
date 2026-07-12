@@ -11,6 +11,16 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import urllib.request
 
+# Images (correct/incorrect)
+#         ↓
+# MediaPipe Pose detection
+#         ↓
+# Feature extraction (angles + landmarks)
+#         ↓
+# Label added (correct/incorrect)
+#         ↓
+# CSV dataset for ML training
+
 # Set up logging
 logger = get_logger("extract_landmarks")
 
@@ -30,13 +40,17 @@ else:
 
 # Set up the pose landmarker
 logger.info("Setting up MediaPipe pose detector...")
+# gogogles pre trained landmark from config.py
 base_options = python.BaseOptions(model_asset_path=POSE_MODEL_PATH)
 options = vision.PoseLandmarkerOptions(
     base_options=base_options,
     running_mode=vision.RunningMode.IMAGE
 )
+# creates the actual pose detection object you can use
 detector = vision.PoseLandmarker.create_from_options(options)
 logger.info("MediaPipe setup complete!")
+
+# takes one image file and extracts 135 features from it
 
 
 def get_landmarks(image_path):
@@ -53,6 +67,8 @@ def get_landmarks(image_path):
 
     landmarks = result.pose_landmarks[0]  # ✅ keep as object, not flat list
     return extract_features(landmarks)    # ✅ returns 135 features
+
+# process all images in a folder and cerate training data
 
 
 def process_folder(folder_path, label):

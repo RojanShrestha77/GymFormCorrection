@@ -1,0 +1,23 @@
+# ── Web framework ──────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+slowapi==0.1.9
+email-validator==2.2.0
+python-multipart==0.0.12
+
+# ── Database ────────────────────────────────────────────────────
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.10
+alembic==1.14.0
+
+# ── Auth ────────────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# ── Config ──────────────────────────────────────────────────────
+python-dotenv==1.0.1
+
+# ── ML (serving only — tflite-runtime is ~2MB vs tensorflow ~600MB) ──
+# In local dev with tensorflow already installed, this is skipped.
+# In Docker, install tflite-runtime for a lean image.
+numpy==1.26.4
